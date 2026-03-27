@@ -5,8 +5,6 @@ import numpy_financial as npf
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
-from fpdf import FPDF
-import base64
 
 # 1. CONFIGURACIÓN E INTERFAZ
 st.set_page_config(page_title="Auditoría Inmobiliaria | Jancarlo", layout="wide")
@@ -19,15 +17,15 @@ st.markdown("""
     }
     .tcea-card {
         background: linear-gradient(135deg, #1e3a8a, #1e40af);
-        padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #3b82f6; color: white;
+        padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #3b82f6;
     }
     .ahorro-card {
         background: linear-gradient(135deg, #064e3b, #065f46);
-        padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #10b981; color: white;
+        padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #10b981;
     }
     .sobrecosto-card {
         background: linear-gradient(135deg, #7f1d1d, #b91c1c);
-        padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #ef4444; color: white;
+        padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #ef4444;
     }
     .nota-box {
         background-color: #161b22; padding: 15px; border-left: 5px solid #d1a435; border-radius: 5px; margin: 10px 0;
@@ -35,36 +33,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. FUNCIONES DE EXPORTACIÓN (ESTILO TECHO DE INVERSIÓN) ---
-def create_pdf(titulo, datos_dict, notas):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt=titulo, ln=True, align='C')
-    pdf.ln(10)
-    
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 10, txt="Resumen de Auditoria:", ln=True)
-    pdf.set_font("Arial", '', 10)
-    
-    for k, v in datos_dict.items():
-        pdf.cell(100, 8, txt=f"{k}:", border=1)
-        pdf.cell(90, 8, txt=f"{v}", border=1, ln=True)
-    
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 10, txt="Notas del Asesor:", ln=True)
-    pdf.set_font("Arial", '', 10)
-    for nota in notas:
-        pdf.multi_cell(0, 8, txt=f"- {nota}")
-    
-    return pdf.output(dest="S").encode("latin-1")
-
-def get_binary_link(bin_file, file_label="Archivo"):
-    b64 = base64.b64encode(bin_file).decode()
-    return f'<a href="data:application/octet-stream;base64,{b64}" download="{file_label}.pdf" style="text-decoration:none;"><button style="width:100%; padding:10px; background-color:#3b82f6; color:white; border:none; border-radius:5px; cursor:pointer;">{file_label}</button></a>'
-
-# --- 3. MOTOR DE CÁLCULO ---
+# --- 2. MOTOR DE CÁLCULO ---
 def calcular_motor(monto, valor_inm, tea, t_des, t_riesgo, plazo, c_dobles, fecha_d):
     tem = (1 + tea/100)**(1/12) - 1
     n_meses = plazo * 12
@@ -106,7 +75,7 @@ def calcular_motor(monto, valor_inm, tea, t_des, t_riesgo, plazo, c_dobles, fech
     tcea = ((1 + npf.irr(flujos))**12 - 1) * 100
     return {"df": pd.DataFrame(data), "tcea": tcea}
 
-# --- 4. INPUTS GLOBALES (SIDEBAR) ---
+# --- 3. INPUTS GLOBALES (SIDEBAR) ---
 with st.sidebar:
     st.title("🏦 Panel de Auditoría")
     monto_p = st.number_input("Monto Préstamo (S/)", value=250000)
@@ -115,6 +84,7 @@ with st.sidebar:
     c_dobles_p = st.checkbox("Cuotas Julio/Dic", value=True)
     fecha_p = st.date_input("Fecha Desembolso", datetime.now())
 
+# --- 4. DEFINICIÓN DE PESTAÑAS ---
 tab1, tab2 = st.tabs(["📊 Simulador Individual", "⚔️ Comparativa de Bancos"])
 
 # --- TAB 1: INDIVIDUAL ---
@@ -128,66 +98,101 @@ with tab1:
     df_ind = res["df"]
     
     m1, m2, m3, m4 = st.columns(4)
-    c_ord = f"S/ {df_ind[df_ind['Tipo']=='ORDINARIA']['Cuota Total'].iloc[0]:,.0f}"
-    m1.metric("Cuota Ordinaria", c_ord)
+    m1.metric("Cuota Ordinaria", f"S/ {df_ind[df_ind['Tipo']=='ORDINARIA']['Cuota Total'].iloc[0]:,.0f}")
     m2.metric("Total Intereses", f"S/ {df_ind['Interés'].sum():,.0f}")
     m3.metric("Total Seguros", f"S/ {df_ind['Total Seguros'].sum():,.0f}")
     with m4: st.markdown(f'<div class="tcea-card"><small>TCEA FINAL</small><br><b style="font-size:1.5rem;">{res["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
 
+    # --- GRÁFICOS PESTAÑA 1 ---
     col_g1, col_g2 = st.columns(2)
     with col_g1:
+        st.subheader("📊 Interés vs Capital (Acumulado)")
         fig_area = go.Figure()
         fig_area.add_trace(go.Scatter(x=df_ind["N°"], y=df_ind["Interés Acumulado"], name="Interés", stackgroup='one', fillcolor='rgba(239, 68, 68, 0.5)', line=dict(color='#ef4444')))
         fig_area.add_trace(go.Scatter(x=df_ind["N°"], y=df_ind["Capital Acumulado"], name="Capital", stackgroup='one', fillcolor='rgba(16, 185, 129, 0.5)', line=dict(color='#10b981')))
-        fig_area.update_layout(title="Interés vs Capital", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+        fig_area.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white", hovermode='x unified')
+        fig_area.update_yaxes(tickprefix="S/ ", tickformat=",.0f")
         st.plotly_chart(fig_area, use_container_width=True)
     with col_g2:
-        fig_line = px.line(df_ind, x="N°", y="Saldo Final", title="Saldo del Préstamo")
+        st.subheader("📉 Saldo del Préstamo")
+        fig_line = px.line(df_ind, x="N°", y="Saldo Final")
+        fig_line.update_traces(line_color='#3b82f6', line_width=3, hovertemplate="Cuota: %{x}<br>Saldo: S/ %{y:,.0f}")
         fig_line.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+        fig_line.update_yaxes(tickprefix="S/ ", tickformat=",.0f")
         st.plotly_chart(fig_line, use_container_width=True)
 
+    st.subheader("📋 Calendario de Pagos Detallado")
+    st.dataframe(df_ind[["N°", "Mes", "Tipo", "Saldo Inicial", "Cuota Cap+Int", "Interés", "Seg. Desgravamen", "Seg. Todo Riesgo", "Cuota Total", "Saldo Final"]], use_container_width=True)
+
+    st.write("---")
     st.subheader("📝 Notas a Considerar")
-    st.markdown("""<div class="nota-box"><ul><li><b>Seguro de Desgravamen:</b> Sobre saldo principal.</li><li><b>Seguro Todo Riesgo:</b> Sobre monto asegurado.</li></ul></div>""", unsafe_allow_html=True)
-    
-    # Exportación Pestaña 1
-    datos_pdf1 = {
-        "Monto Prestamo": f"S/ {monto_p:,.0f}", "TEA": f"{tea_ind}%", 
-        "Cuota Ordinaria": c_ord, "TCEA": f"{res['tcea']:.2f}%"
-    }
-    pdf1 = create_pdf("REPORTE INDIVIDUAL - AUDITORIA INMOBILIARIA", datos_pdf1, ["El seguro de desgravamen baja cada mes.", "El seguro de inmueble es costo fijo."])
-    st.markdown(get_binary_link(pdf1, "📄 Descargar Reporte Individual"), unsafe_allow_html=True)
+    st.markdown("""
+    <div class="nota-box">
+        <ul>
+            <li><b>Seguro de Desgravamen:</b> Se calcula sobre el saldo del principal (deuda pendiente). A medida que pagas tu deuda, este seguro disminuye mensualmente.</li>
+            <li><b>Seguro de Todo Riesgo:</b> Se calcula sobre el monto asegurado (valor del inmueble o de edificación). Es un costo fijo durante toda la vida del préstamo.</li>
+            <li><b>Amortización:</b> En las primeras cuotas, la mayor parte de tu pago se destina a intereses. La reducción real de tu deuda se acelera hacia la mitad del plazo.</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- TAB 2: COMPARATIVA ---
 with tab2:
     st.subheader("⚔️ Auditoría entre Entidades Financieras")
     c_b1, c_b2 = st.columns(2)
     with c_b1:
+        st.info("🏦 OPCIÓN A")
         n_a = st.text_input("Nombre Banco A", value="BANCO A")
-        res1 = calcular_motor(monto_p, valor_i, st.number_input("TEA A (%)", value=9.5, key="t1"), st.number_input("Desgravamen A (%)", 0.05, key="d1"), st.number_input("Riesgo A (%)", 0.3, key="r1"), plazo_p, c_dobles_p, fecha_p)
+        t1 = st.number_input("TEA A (%)", value=9.5, key="t1")
+        d1 = st.number_input("Desgravamen A (%)", value=0.050, format="%.3f", key="d1")
+        r1 = st.number_input("Todo Riesgo A (%)", value=0.30, key="r1")
+        res1 = calcular_motor(monto_p, valor_i, t1, d1, r1, plazo_p, c_dobles_p, fecha_p)
     with c_b2:
+        st.success("🏦 OPCIÓN B")
         n_b = st.text_input("Nombre Banco B", value="BANCO B")
-        res2 = calcular_motor(monto_p, valor_i, st.number_input("TEA B (%)", value=9.2, key="t2"), st.number_input("Desgravamen B (%)", 0.08, key="d2"), st.number_input("Riesgo B (%)", 0.28, key="r2"), plazo_p, c_dobles_p, fecha_p)
+        t2 = st.number_input("TEA B (%)", value=9.2, key="t2")
+        d2 = st.number_input("Desgravamen B (%)", value=0.080, format="%.3f", key="d2")
+        r2 = st.number_input("Todo Riesgo B (%)", value=0.28, key="r2")
+        res2 = calcular_motor(monto_p, valor_i, t2, d2, r2, plazo_p, c_dobles_p, fecha_p)
 
-    total_a, total_b = res1['df']["Cuota Total"].sum(), res2['df']["Cuota Total"].sum()
+    total_a = res1['df']["Cuota Total"].sum()
+    total_b = res2['df']["Cuota Total"].sum()
     ahorro_val = total_a - total_b
     
+    st.write("---")
+    
+    # --- 3 TARJETAS PRINCIPALES ---
     tc1, tc2, tc3 = st.columns(3)
-    with tc1: st.markdown(f'<div class="tcea-card"><small>TCEA {n_a}</small><br><b style="font-size:1.8rem;">{res1["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
-    with tc2: st.markdown(f'<div class="tcea-card"><small>TCEA {n_b}</small><br><b style="font-size:1.8rem;">{res2["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
-    with tc3: st.markdown(f'<div class="{"ahorro-card" if ahorro_val > 0 else "sobrecosto-card"}"><small>{"AHORRO" if ahorro_val > 0 else "SOBRECOSTO"}</small><br><b style="font-size:1.8rem;">S/ {abs(ahorro_val):,.0f}</b></div>', unsafe_allow_html=True)
+    with tc1:
+        st.markdown(f'<div class="tcea-card"><small>TCEA {n_a}</small><br><b style="font-size:1.8rem;">{res1["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
+    with tc2:
+        st.markdown(f'<div class="tcea-card"><small>TCEA {n_b}</small><br><b style="font-size:1.8rem;">{res2["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
+    with tc3:
+        clase_card = "ahorro-card" if ahorro_val > 0 else "sobrecosto-card"
+        texto_card = "AHORRO TOTAL" if ahorro_val > 0 else "SOBRECOSTO"
+        st.markdown(f'<div class="{clase_card}"><small>{texto_card}</small><br><b style="font-size:1.8rem;">S/ {abs(ahorro_val):,.0f}</b></div>', unsafe_allow_html=True)
 
+    # --- RECOMENDACIÓN FINAL ---
     mejor = n_a if res1['tcea'] < res2['tcea'] else n_b
-    st.markdown(f'<div style="background-color: {"#1e3a8a" if mejor == n_a else "#065f46"}; padding: 20px; border-radius: 15px; text-align: center; margin: 25px 0; border: 2px solid white;"><h2 style="color: white; margin: 0;">✅ RECOMENDACIÓN: {mejor}</h2></div>', unsafe_allow_html=True)
+    color_rec = "#1e3a8a" if mejor == n_a else "#10b981"
+    st.markdown(f'<div style="background-color: {color_rec}; padding: 20px; border-radius: 15px; text-align: center; margin: 25px 0; border: 2px solid #ffffff33;"><h2 style="color: white; margin: 0;">✅ RECOMENDACIÓN: {mejor}</h2></div>', unsafe_allow_html=True)
 
-    # Tabla Resumen
-    def g_r(r): return [int(r["df"]["Cuota Total"].sum()), f"{r['tcea']:.2f}%"]
-    df_res = pd.DataFrame({"Concepto": ["Pago Total", "TCEA"], n_a: g_r(res1), n_b: g_r(res2)})
-    st.table(df_res.set_index("Concepto"))
+    # --- RESUMEN NUMÉRICO ---
+    st.subheader("📋 Resumen Numérico de Auditoría")
+    def get_row(res_b):
+        df = res_b["df"]
+        return [int(df[df["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]), int(df["Interés"].sum()), int(df["Seg. Desgravamen"].sum()), int(df["Seg. Todo Riesgo"].sum()), int(df["Total Seguros"].sum()), int(df["Interés"].sum() + df["Total Seguros"].sum()), int(df["Cuota Total"].sum())]
 
-    # Exportación Pestaña 2
-    datos_pdf2 = {
-        f"TCEA {n_a}": f"{res1['tcea']:.2f}%", f"TCEA {n_b}": f"{res2['tcea']:.2f}%",
-        "Recomendacion": mejor, "Impacto Economico": f"S/ {abs(ahorro_val):,.0f}"
-    }
-    pdf2 = create_pdf("AUDITORIA COMPARATIVA DE BANCOS", datos_pdf2, [f"La mejor opcion es {mejor}.", "Se recomienda negociar endoso de seguros."])
-    st.markdown(get_binary_link(pdf2, "📄 Descargar Comparativa PDF"), unsafe_allow_html=True)
+    datos_tab = {"Concepto": ["Cuota Ord.", "Total Intereses", "Total Desgravamen", "Total Todo Riesgo", "TOTAL SEGUROS", "GASTOS FINANCIEROS", "PAGO TOTAL"], n_a: get_row(res1), n_b: get_row(res2)}
+    df_res = pd.DataFrame(datos_tab)
+    # Sobrecosto fila final
+    row_sob = {"Concepto": "SOBRECOSTO BANCARIO", n_a: int(max(0, total_a - total_b)), n_b: int(max(0, total_b - total_a))}
+    df_res = pd.concat([df_res, pd.DataFrame([row_sob])], ignore_index=True)
+    st.table(df_res.set_index("Concepto").applymap(lambda x: f"S/ {x:,.0f}"))
+
+    # --- GRÁFICO COMPARATIVO ---
+    fig_comp = go.Figure()
+    fig_comp.add_trace(go.Bar(name=n_a, x=df_res["Concepto"][:4], y=df_res[n_a][:4], marker_color='#1e3a8a'))
+    fig_comp.add_trace(go.Bar(name=n_b, x=df_res["Concepto"][:4], y=df_res[n_b][:4], marker_color='#10b981'))
+    fig_comp.update_layout(barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+    st.plotly_chart(fig_comp, use_container_width=True)
