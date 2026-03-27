@@ -29,7 +29,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. MOTOR DE CÁLCULO ---
+# --- 2. MOTOR DE CÁLCULO REUTILIZABLE ---
 def calcular_motor(monto, valor_inm, tea, t_des, t_riesgo, plazo, c_dobles, fecha_d):
     tem = (1 + tea/100)**(1/12) - 1
     n_meses = plazo * 12
@@ -80,7 +80,7 @@ with st.sidebar:
     c_dobles_p = st.checkbox("Cuotas Julio/Dic", value=True)
     fecha_p = st.date_input("Fecha Desembolso", datetime.now())
 
-# IMPORTANTE: Definir las pestañas AQUÍ antes de usarlas
+# DEFINICIÓN DE PESTAÑAS (Orden Crítico)
 tab1, tab2 = st.tabs(["📊 Simulador Individual", "⚔️ Comparativa de Bancos"])
 
 # --- 4. TAB 1: INDIVIDUAL ---
@@ -110,7 +110,7 @@ with tab1:
     with col_g2:
         st.subheader("📉 Saldo del Préstamo")
         fig_line = px.line(df_ind, x="N°", y="Saldo Final")
-        fig_line.update_traces(line_color='#3b82f6', line_width=3, hovertemplate="Cuota: %{x}<br>Saldo: S/ %{y:,.0f}")
+        fig_line.update_traces(line_color='#3b82f6', line_width=3, hovertemplate="Mes: %{x}<br>Saldo: S/ %{y:,.0f}")
         fig_line.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
         fig_line.update_yaxes(tickprefix="S/ ", tickformat=",.0f")
         st.plotly_chart(fig_line, use_container_width=True)
@@ -130,9 +130,7 @@ with tab2:
         d2 = st.number_input("Desgravamen B (%)", value=0.080, format="%.3f", key="d2")
         res2 = calcular_motor(monto_p, valor_i, t2, d2, 0.025, plazo_p, c_dobles_p, fecha_p)
 
-    pago_total_a = res1['df']["Cuota Total"].sum()
-    pago_total_b = res2['df']["Cuota Total"].sum()
-    ahorro = pago_total_a - pago_total_b
+    ahorro = res1['df']["Cuota Total"].sum() - res2['df']["Cuota Total"].sum()
     
     st.write("---")
     cm1, cm2, cm3 = st.columns(3)
@@ -142,6 +140,38 @@ with tab2:
         color_ah = "#10b981" if ahorro > 0 else "#ef4444"
         st.markdown(f'<div class="ahorro-card" style="background:{color_ah}">{"AHORRO" if ahorro > 0 else "SOBRECOSTO"}<br><b style="font-size:1.8rem;">S/ {abs(ahorro):,.0f}</b></div>', unsafe_allow_html=True)
 
+    # REINTEGRACIÓN DEL GRÁFICO DE BARRAS COMPARATIVO
+    st.write("")
+    st.subheader("📊 Comparación de Costos Lado a Lado")
+    
+    comp_df = pd.DataFrame({
+        "Concepto": ["Cuota Ord.", "Total Interés", "Total Seguros"],
+        "Banco A": [
+            int(res1['df'][res1['df']["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]), 
+            int(res1['df']["Interés"].sum()), 
+            int(res1['df']["Seguros"].sum())
+        ],
+        "Banco B": [
+            int(res2['df'][res2['df']["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]), 
+            int(res2['df']["Interés"].sum()), 
+            int(res2['df']["Seguros"].sum())
+        ]
+    })
+    
+    fig_comp = go.Figure()
+    fig_comp.add_trace(go.Bar(name='Banco A', x=comp_df["Concepto"], y=comp_df["Banco A"], marker_color='#1e3a8a'))
+    fig_comp.add_trace(go.Bar(name='Banco B', x=comp_df["Concepto"], y=comp_df["Banco B"], marker_color='#10b981'))
+    
+    fig_comp.update_layout(
+        barmode='group', 
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)', 
+        font_color="white",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    fig_comp.update_yaxes(tickprefix="S/ ", tickformat=",.0f")
+    st.plotly_chart(fig_comp, use_container_width=True)
+
     st.write("---")
     st.subheader("📝 Notas de Auditoría")
     n_col1, n_col2 = st.columns(2)
@@ -150,8 +180,8 @@ with tab2:
         <div class="nota-box">
         <h4>🔍 Cálculo del Sobrecosto</h4>
         <ul>
-            <li><b>Diferencia de Flujos:</b> Se calcula restando el pago total proyectado de ambos bancos. El monto de <b>S/ {abs(ahorro):,.0f}</b> es el impacto real en tu patrimonio.</li>
-            <li><b>Efecto TCEA:</b> Nota que el banco con menor TEA no siempre es el más barato si sus seguros son elevados.</li>
+            <li><b>Diferencia de Flujos:</b> Se calcula restando el pago total de ambos bancos. El ahorro de <b>S/ {abs(ahorro):,.0f}</b> es dinero que se queda en tu bolsillo.</li>
+            <li><b>Efecto TCEA:</b> Como ves en las barras, un banco puede tener menos interés pero más seguros, elevando el costo real.</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -160,8 +190,8 @@ with tab2:
         <div class="nota-box">
         <h4>🚩 Consideraciones</h4>
         <ul>
-            <li><b>Seguros:</b> El desgravamen se calcula sobre saldo. Si es muy alto, anula el beneficio de una tasa baja.</li>
-            <li><b>Recomendación:</b> Evalúa el endoso de un seguro de vida externo para reducir costos bancarios.</li>
+            <li><b>Seguros:</b> Recuerda que el desgravamen baja cada mes sobre el saldo del principal.</li>
+            <li><b>Estrategia:</b> Si el Banco B tiene seguros caros, pregunta por la opción de endosar un seguro de vida externo.</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
