@@ -103,6 +103,24 @@ with tab1:
     m3.metric("Total Seguros", f"S/ {df_ind['Total Seguros'].sum():,.0f}")
     with m4: st.markdown(f'<div class="tcea-card"><small>TCEA FINAL</small><br><b style="font-size:1.5rem;">{res["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
 
+    # --- GRÁFICOS PESTAÑA 1 ---
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        st.subheader("📊 Interés vs Capital (Acumulado)")
+        fig_area = go.Figure()
+        fig_area.add_trace(go.Scatter(x=df_ind["N°"], y=df_ind["Interés Acumulado"], name="Interés", stackgroup='one', fillcolor='rgba(239, 68, 68, 0.5)', line=dict(color='#ef4444')))
+        fig_area.add_trace(go.Scatter(x=df_ind["N°"], y=df_ind["Capital Acumulado"], name="Capital", stackgroup='one', fillcolor='rgba(16, 185, 129, 0.5)', line=dict(color='#10b981')))
+        fig_area.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white", hovermode='x unified')
+        fig_area.update_yaxes(tickprefix="S/ ", tickformat=",.0f")
+        st.plotly_chart(fig_area, use_container_width=True)
+    with col_g2:
+        st.subheader("📉 Saldo del Préstamo")
+        fig_line = px.line(df_ind, x="N°", y="Saldo Final")
+        fig_line.update_traces(line_color='#3b82f6', line_width=3, hovertemplate="Cuota: %{x}<br>Saldo: S/ %{y:,.0f}")
+        fig_line.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+        fig_line.update_yaxes(tickprefix="S/ ", tickformat=",.0f")
+        st.plotly_chart(fig_line, use_container_width=True)
+
     st.subheader("📋 Calendario de Pagos Detallado")
     st.dataframe(df_ind[["N°", "Mes", "Tipo", "Saldo Inicial", "Cuota Cap+Int", "Interés", "Seg. Desgravamen", "Seg. Todo Riesgo", "Cuota Total", "Saldo Final"]], use_container_width=True)
 
@@ -114,7 +132,6 @@ with tab1:
             <li><b>Seguro de Desgravamen:</b> Se calcula sobre el saldo del principal (deuda pendiente). A medida que pagas tu deuda, este seguro disminuye mensualmente.</li>
             <li><b>Seguro de Todo Riesgo:</b> Se calcula sobre el monto asegurado (valor del inmueble o de edificación). Es un costo fijo durante toda la vida del préstamo.</li>
             <li><b>Amortización:</b> En las primeras cuotas, la mayor parte de tu pago se destina a intereses. La reducción real de tu deuda se acelera hacia la mitad del plazo.</li>
-            <li><b>Cuotas Dobles:</b> Si activaste Julio y Diciembre, tu capacidad de ahorro en esos meses debe contemplar el doble de la cuota ordinaria.</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
@@ -151,69 +168,31 @@ with tab2:
     with tc2:
         st.markdown(f'<div class="tcea-card"><small>TCEA {n_b}</small><br><b style="font-size:1.8rem;">{res2["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
     with tc3:
-        # Si el ahorro es negativo, significa que el Banco A es más barato, por eso usamos abs() para el monto
-        clase_card = "ahorro-card" if ahorro_val != 0 else "tcea-card"
+        clase_card = "ahorro-card" if ahorro_val > 0 else "sobrecosto-card"
         texto_card = "AHORRO TOTAL" if ahorro_val > 0 else "SOBRECOSTO"
-        st.markdown(f'<div class="{clase_card if ahorro_val > 0 else "sobrecosto-card"}"><small>{texto_card}</small><br><b style="font-size:1.8rem;">S/ {abs(ahorro_val):,.0f}</b></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="{clase_card}"><small>{texto_card}</small><br><b style="font-size:1.8rem;">S/ {abs(ahorro_val):,.0f}</b></div>', unsafe_allow_html=True)
 
     # --- RECOMENDACIÓN FINAL ---
     mejor = n_a if res1['tcea'] < res2['tcea'] else n_b
     color_rec = "#1e3a8a" if mejor == n_a else "#10b981"
-    
-    st.markdown(f"""
-        <div style="background-color: {color_rec}; padding: 20px; border-radius: 15px; text-align: center; margin: 25px 0; border: 2px solid #ffffff33;">
-            <h2 style="color: white; margin: 0;">✅ RECOMENDACIÓN: {mejor}</h2>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div style="background-color: {color_rec}; padding: 20px; border-radius: 15px; text-align: center; margin: 25px 0; border: 2px solid #ffffff33;"><h2 style="color: white; margin: 0;">✅ RECOMENDACIÓN: {mejor}</h2></div>', unsafe_allow_html=True)
 
-    # --- RESUMEN NUMÉRICO Y GRÁFICO ---
+    # --- RESUMEN NUMÉRICO ---
     st.subheader("📋 Resumen Numérico de Auditoría")
-    
     def get_row(res_b):
         df = res_b["df"]
-        return [
-            int(df[df["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]),
-            int(df["Interés"].sum()),
-            int(df["Seg. Desgravamen"].sum()),
-            int(df["Seg. Todo Riesgo"].sum()),
-            int(df["Total Seguros"].sum()),
-            int(df["Interés"].sum() + df["Total Seguros"].sum()),
-            int(df["Cuota Total"].sum())
-        ]
+        return [int(df[df["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]), int(df["Interés"].sum()), int(df["Seg. Desgravamen"].sum()), int(df["Seg. Todo Riesgo"].sum()), int(df["Total Seguros"].sum()), int(df["Interés"].sum() + df["Total Seguros"].sum()), int(df["Cuota Total"].sum())]
 
-    datos_tab = {
-        "Concepto": ["Cuota Ord.", "Total Intereses", "Total Desgravamen", "Total Todo Riesgo", "TOTAL SEGUROS", "GASTOS FINANCIEROS", "PAGO TOTAL"],
-        n_a: get_row(res1),
-        n_b: get_row(res2)
-    }
+    datos_tab = {"Concepto": ["Cuota Ord.", "Total Intereses", "Total Desgravamen", "Total Todo Riesgo", "TOTAL SEGUROS", "GASTOS FINANCIEROS", "PAGO TOTAL"], n_a: get_row(res1), n_b: get_row(res2)}
     df_res = pd.DataFrame(datos_tab)
+    # Sobrecosto fila final
+    row_sob = {"Concepto": "SOBRECOSTO BANCARIO", n_a: int(max(0, total_a - total_b)), n_b: int(max(0, total_b - total_a))}
+    df_res = pd.concat([df_res, pd.DataFrame([row_sob])], ignore_index=True)
     st.table(df_res.set_index("Concepto").applymap(lambda x: f"S/ {x:,.0f}"))
 
-    st.write("")
+    # --- GRÁFICO COMPARATIVO ---
     fig_comp = go.Figure()
     fig_comp.add_trace(go.Bar(name=n_a, x=df_res["Concepto"][:4], y=df_res[n_a][:4], marker_color='#1e3a8a'))
     fig_comp.add_trace(go.Bar(name=n_b, x=df_res["Concepto"][:4], y=df_res[n_b][:4], marker_color='#10b981'))
     fig_comp.update_layout(barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
     st.plotly_chart(fig_comp, use_container_width=True)
-
-    # --- NOTAS DE AUDITORÍA ---
-    st.write("---")
-    st.subheader("📝 Notas de Auditoría de Costos")
-    n1, n2 = st.columns(2)
-    with n1:
-        st.markdown(f"""
-        <div class="nota-box">
-        <h4>💰 Cálculo del Sobrecosto</h4>
-        <p>Se obtiene comparando el <b>Pago Total</b> proyectado. El sobrecosto es dinero que el cliente "pierde" al no elegir la opción con TCEA más baja.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with n2:
-        st.markdown("""
-        <div class="nota-box">
-        <h4>⚠️ Puntos Clave</h4>
-        <ul>
-            <li><b>Gastos Financieros:</b> Suma de Intereses + Seguros.</li>
-            <li><b>Endoso:</b> Puedes endosar seguros externos para bajar la cuota.</li>
-        </ul>
-        </div>
-        """, unsafe_allow_html=True)
