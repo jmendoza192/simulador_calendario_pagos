@@ -29,11 +29,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. MOTOR DE CÁLCULO ---
+# --- 2. MOTOR DE CÁLCULO ACTUALIZADO ---
 def calcular_motor(monto, valor_inm, tea, t_des, t_riesgo, plazo, c_dobles, fecha_d):
     tem = (1 + tea/100)**(1/12) - 1
     n_meses = plazo * 12
-    seg_fijo = valor_inm * (t_riesgo/100)
+    # El Seguro Todo Riesgo suele ser una tasa anual dividida entre 12 aplicada al valor de edificación/inmueble
+    seg_todo_riesgo_mensual = valor_inm * (t_riesgo/100) / 12
     t_des_m = t_des/100
     
     meses_d = []
@@ -49,22 +50,27 @@ def calcular_motor(monto, valor_inm, tea, t_des, t_riesgo, plazo, c_dobles, fech
     
     for i in range(1, n_meses + 1):
         int_m = saldo * tem
-        seg_d = saldo * t_des_m
+        seg_desg = saldo * t_des_m
         es_d = i in meses_d
         c_cap_int = cuota_base * (2 if es_d else 1)
         amort = c_cap_int - int_m
-        c_total = c_cap_int + seg_d + seg_fijo
+        c_total = c_cap_int + seg_desg + seg_todo_riesgo_mensual
         saldo -= amort
         int_ac += int_m; cap_ac += amort
         
         data.append({
             "N°": i, "Mes": (fecha_d + pd.DateOffset(months=i)).strftime('%b-%Y'),
             "Tipo": "DOBLE" if es_d else "ORDINARIA",
-            "Saldo Inicial": int(saldo + amort), "Cuota Cap+Int": int(c_cap_int),
-            "Interés": int(int_m), "Seg. Desgravamen": int(seg_d), 
-            "Seg. Todo Riesgo": int(seg_fijo), "Cuota Total": int(c_total),
-            "Saldo Final": int(max(0, saldo)), "Interés Acumulado": int(int_ac), 
-            "Capital Acumulado": int(cap_ac), "Seguros": int(seg_d + seg_fijo)
+            "Saldo Inicial": int(saldo + amort), 
+            "Cuota Cap+Int": int(c_cap_int),
+            "Interés": int(int_m), 
+            "Seg. Desgravamen": int(seg_desg), 
+            "Seg. Todo Riesgo": int(seg_todo_riesgo_mensual), 
+            "Cuota Total": int(c_total),
+            "Saldo Final": int(max(0, saldo)), 
+            "Interés Acumulado": int(int_ac), 
+            "Capital Acumulado": int(cap_ac), 
+            "Total Seguros": int(seg_desg + seg_todo_riesgo_mensual)
         })
         flujos.append(c_total)
     
@@ -80,129 +86,113 @@ with st.sidebar:
     c_dobles_p = st.checkbox("Cuotas Julio/Dic", value=True)
     fecha_p = st.date_input("Fecha Desembolso", datetime.now())
 
-# --- 4. DEFINICIÓN DE PESTAÑAS (CRÍTICO: Declarar antes de usar) ---
+# --- 4. DEFINICIÓN DE PESTAÑAS ---
 tab1, tab2 = st.tabs(["📊 Simulador Individual", "⚔️ Comparativa de Bancos"])
 
-# --- CONTENIDO TAB 1: INDIVIDUAL ---
+# --- TAB 1: INDIVIDUAL ---
 with tab1:
-    col_a1, col_a2 = st.columns(2)
+    col_a1, col_a2, col_a3 = st.columns(3)
     with col_a1: tea_ind = st.number_input("TEA Banco (%)", value=9.50, key="tea_ind")
-    with col_a2: des_ind = st.number_input("Seg. Desgravamen Mensual (%)", value=0.050, format="%.3f", key="des_ind")
+    with col_a2: des_ind = st.number_input("Desgravamen (%)", value=0.050, format="%.3f", key="des_ind")
+    with col_a3: ries_ind = st.number_input("Todo Riesgo Anual (%)", value=0.30, format="%.2f", key="ries_ind")
     
-    res = calcular_motor(monto_p, valor_i, tea_ind, des_ind, 0.025, plazo_p, c_dobles_p, fecha_p)
+    res = calcular_motor(monto_p, valor_i, tea_ind, des_ind, ries_ind, plazo_p, c_dobles_p, fecha_p)
     df_ind = res["df"]
     
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Cuota Ordinaria", f"S/ {df_ind[df_ind['Tipo']=='ORDINARIA']['Cuota Total'].iloc[0]:,.0f}")
     m2.metric("Total Intereses", f"S/ {df_ind['Interés'].sum():,.0f}")
-    m3.metric("Total Seguros", f"S/ {df_ind['Seguros'].sum():,.0f}")
+    m3.metric("Total Seguros", f"S/ {df_ind['Total Seguros'].sum():,.0f}")
     with m4: st.markdown(f'<div class="tcea-card"><small>TCEA FINAL</small><br><b style="font-size:1.5rem;">{res["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
 
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        st.subheader("📊 Interés vs Capital (Acumulado)")
-        fig_area = go.Figure()
-        fig_area.add_trace(go.Scatter(x=df_ind["N°"], y=df_ind["Interés Acumulado"], name="Interés", stackgroup='one', fillcolor='rgba(239, 68, 68, 0.5)', line=dict(color='#ef4444')))
-        fig_area.add_trace(go.Scatter(x=df_ind["N°"], y=df_ind["Capital Acumulado"], name="Capital", stackgroup='one', fillcolor='rgba(16, 185, 129, 0.5)', line=dict(color='#10b981')))
-        fig_area.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white", hovermode='x unified')
-        fig_area.update_yaxes(tickprefix="S/ ", tickformat=",.0f")
-        st.plotly_chart(fig_area, use_container_width=True)
-    with col_g2:
-        st.subheader("📉 Saldo del Préstamo")
-        fig_line = px.line(df_ind, x="N°", y="Saldo Final")
-        fig_line.update_traces(line_color='#3b82f6', line_width=3, hovertemplate="Mes: %{x}<br>Saldo: S/ %{y:,.0f}")
-        fig_line.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
-        fig_line.update_yaxes(tickprefix="S/ ", tickformat=",.0f")
-        st.plotly_chart(fig_line, use_container_width=True)
+    st.subheader("📋 Calendario de Pagos Detallado")
+    st.dataframe(df_ind[["N°", "Mes", "Tipo", "Saldo Inicial", "Cuota Cap+Int", "Interés", "Seg. Desgravamen", "Seg. Todo Riesgo", "Cuota Total", "Saldo Final"]], use_container_width=True)
 
-# --- CONTENIDO TAB 2: COMPARATIVA ---
+# --- TAB 2: COMPARATIVA ---
 with tab2:
     st.subheader("⚔️ Auditoría entre Entidades Financieras")
     c_b1, c_b2 = st.columns(2)
     with c_b1:
-        st.info("🏦 BANCO A")
-        nombre_a = st.text_input("Nombre Banco A", value="BANCO A")
+        st.info("🏦 OPCIÓN A")
+        n_a = st.text_input("Banco A", value="BANCO A")
         t1 = st.number_input("TEA A (%)", value=9.5, key="t1")
         d1 = st.number_input("Desgravamen A (%)", value=0.050, format="%.3f", key="d1")
-        res1 = calcular_motor(monto_p, valor_i, t1, d1, 0.025, plazo_p, c_dobles_p, fecha_p)
+        r1 = st.number_input("Todo Riesgo A (%)", value=0.30, key="r1")
+        res1 = calcular_motor(monto_p, valor_i, t1, d1, r1, plazo_p, c_dobles_p, fecha_p)
     with c_b2:
-        st.success("🏦 BANCO B")
-        nombre_b = st.text_input("Nombre Banco B", value="BANCO B")
+        st.success("🏦 OPCIÓN B")
+        n_b = st.text_input("Banco B", value="BANCO B")
         t2 = st.number_input("TEA B (%)", value=9.2, key="t2")
         d2 = st.number_input("Desgravamen B (%)", value=0.080, format="%.3f", key="d2")
-        res2 = calcular_motor(monto_p, valor_i, t2, d2, 0.025, plazo_p, c_dobles_p, fecha_p)
+        r2 = st.number_input("Todo Riesgo B (%)", value=0.28, key="r2")
+        res2 = calcular_motor(monto_p, valor_i, t2, d2, r2, plazo_p, c_dobles_p, fecha_p)
 
-    # Lógica de Recomendación y Sobrecostos
+    # Lógica de Recomendación
     total_a = res1['df']["Cuota Total"].sum()
     total_b = res2['df']["Cuota Total"].sum()
-    mejor_banco = nombre_a if res1['tcea'] < res2['tcea'] else nombre_b
-    color_rec = "#1e3a8a" if mejor_banco == nombre_a else "#10b981"
+    mejor = n_a if res1['tcea'] < res2['tcea'] else n_b
+    color_rec = "#1e3a8a" if mejor == n_a else "#10b981"
     
     st.write("---")
     st.markdown(f"""
         <div style="background-color: {color_rec}; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; border: 2px solid #ffffff33;">
-            <h2 style="color: white; margin: 0;">✅ RECOMENDACIÓN: {mejor_banco}</h2>
+            <h2 style="color: white; margin: 0;">✅ RECOMENDACIÓN: {mejor}</h2>
             <p style="color: #e0e0e0; font-size: 1.1rem; margin-top: 10px;">
-                Tras analizar la TCEA, el <b>{mejor_banco}</b> minimiza tus gastos financieros totales.
+                El <b>{mejor}</b> es la opción ganadora tras auditar Intereses, Desgravamen y Seguro de Inmueble.
             </p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Métricas de Resumen
-    cm1, cm2, cm3 = st.columns(3)
-    cm1.markdown(f'<div class="tcea-card">TCEA {nombre_a}<br><b style="font-size:1.8rem;">{res1["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
-    cm2.markdown(f'<div class="tcea-card">TCEA {nombre_b}<br><b style="font-size:1.8rem;">{res2["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
-    with cm3:
-        ahorro_val = total_a - total_b
-        color_ah = "#10b981" if ahorro_val > 0 else "#ef4444"
-        st.markdown(f'<div class="ahorro-card" style="background:{color_ah}">{"AHORRO" if ahorro_val > 0 else "SOBRECOSTO"}<br><b style="font-size:1.8rem;">S/ {abs(ahorro_val):,.0f}</b></div>', unsafe_allow_html=True)
-
     # --- RESUMEN NUMÉRICO EXTENDIDO ---
-    st.subheader("📋 Resumen Numérico Detallado")
-    int_a, seg_a = int(res1['df']["Interés"].sum()), int(res1['df']["Seguros"].sum())
-    int_b, seg_b = int(res2['df']["Interés"].sum()), int(res2['df']["Seguros"].sum())
+    st.subheader("📋 Resumen Numérico de Auditoría")
     
-    datos_tab = {
-        "Concepto": [
-            "Cuota Ordinaria", 
-            "Total Intereses", 
-            "Total Seguros", 
-            "GASTOS FINANCIEROS (Int+Seg)", 
-            "PAGO TOTAL PROYECTADO",
-            "SOBRECOSTO BANCARIO"
-        ],
-        nombre_a: [
-            int(res1['df'][res1['df']["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]),
-            int_a, seg_a, int_a + seg_a, int(total_a), int(max(0, total_a - total_b))
-        ],
-        nombre_b: [
-            int(res2['df'][res2['df']["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]),
-            int_b, seg_b, int_b + seg_b, int(total_b), int(max(0, total_b - total_a))
+    def get_row(res_b):
+        df = res_b["df"]
+        return [
+            int(df[df["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]),
+            int(df["Interés"].sum()),
+            int(df["Seg. Desgravamen"].sum()),
+            int(df["Seg. Todo Riesgo"].sum()),
+            int(df["Total Seguros"].sum()),
+            int(df["Interés"].sum() + df["Total Seguros"].sum()),
+            int(df["Cuota Total"].sum())
         ]
+
+    datos_tab = {
+        "Concepto": ["Cuota Ord.", "Total Intereses", "Total Desgravamen", "Total Todo Riesgo", "TOTAL SEGUROS", "GASTOS FINANCIEROS", "PAGO TOTAL"],
+        n_a: get_row(res1),
+        n_b: get_row(res2)
     }
+    
     df_res = pd.DataFrame(datos_tab)
+    # Cálculo de sobrecosto
+    sobrecosto_a = int(max(0, total_a - total_b))
+    sobrecosto_b = int(max(0, total_b - total_a))
+    
+    new_row = {"Concepto": "SOBRECOSTO BANCARIO", n_a: sobrecosto_a, n_b: sobrecosto_b}
+    df_res = pd.concat([df_res, pd.DataFrame([new_row])], ignore_index=True)
+
     st.table(df_res.set_index("Concepto").applymap(lambda x: f"S/ {x:,.0f}"))
 
     # --- GRÁFICO COMPARATIVO ---
     st.write("")
     fig_comp = go.Figure()
-    fig_comp.add_trace(go.Bar(name=nombre_a, x=df_res["Concepto"][:4], y=df_res[nombre_a][:4], marker_color='#1e3a8a'))
-    fig_comp.add_trace(go.Bar(name=nombre_b, x=df_res["Concepto"][:4], y=df_res[nombre_b][:4], marker_color='#10b981'))
+    fig_comp.add_trace(go.Bar(name=n_a, x=df_res["Concepto"][:4], y=df_res[n_a][:4], marker_color='#1e3a8a'))
+    fig_comp.add_trace(go.Bar(name=n_b, x=df_res["Concepto"][:4], y=df_res[n_b][:4], marker_color='#10b981'))
     fig_comp.update_layout(barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
     st.plotly_chart(fig_comp, use_container_width=True)
 
-    # --- NOTAS TÉCNICAS Y ENDOSOS ---
+    # --- NOTAS TÉCNICAS ---
     st.write("---")
-    st.subheader("📝 Notas de Auditoría de Costos")
+    st.subheader("📝 Notas de Auditoría")
     n1, n2 = st.columns(2)
     with n1:
         st.markdown(f"""
         <div class="nota-box">
-        <h4>💰 ¿Cómo se calcula el Sobrecosto?</h4>
-        <p>El sobrecosto no es solo una diferencia de tasas nominales. Es el impacto patrimonial calculado mediante la <b>Suma Total de Flujos (∑)</b>:</p>
+        <h4>💰 Cálculo del Sobrecosto</h4>
+        <p>Se obtiene comparando el <b>Pago Total</b> proyectado. El sobrecosto es dinero que el cliente "pierde" al no elegir la opción con TCEA más baja.</p>
         <ul>
-            <li>Comparamos el pago total final de cada banco.</li>
-            <li>Si eliges la opción NO recomendada, estarías pagando un excedente innecesario al banco.</li>
+            <li><b>Seguro Todo Riesgo:</b> Es un costo fijo basado en el valor del inmueble. No reduce con el saldo.</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
@@ -211,9 +201,8 @@ with tab2:
         <div class="nota-box">
         <h4>⚠️ Puntos Clave</h4>
         <ul>
-            <li><b>Gastos Financieros:</b> Es el "alquiler" real que pagas por el dinero. Incluye intereses y seguros.</li>
-            <li><b>Efecto Seguros:</b> Un banco con TEA baja pero seguros agresivos puede ser más caro que uno con TEA alta.</li>
-            <li><b>Endoso de Seguros:</b> Tienes el derecho de <b>endosar una póliza de vida externa</b> para eliminar el cobro mensual del Seguro de Desgravamen bancario, reduciendo significativamente tu pago total.</li>
+            <li><b>Gastos Financieros:</b> Suma de Intereses + Seguros (Desgravamen + Todo Riesgo).</li>
+            <li><b>Endoso:</b> Puedes endosar tu seguro de vida (elimina Desgravamen) y tu seguro domiciliario (elimina Todo Riesgo) para bajar la cuota.</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
