@@ -80,10 +80,10 @@ with st.sidebar:
     c_dobles_p = st.checkbox("Cuotas Julio/Dic", value=True)
     fecha_p = st.date_input("Fecha Desembolso", datetime.now())
 
-# --- 4. DEFINICIÓN DE PESTAÑAS (ORDEN SAGRADO) ---
+# --- 4. DEFINICIÓN DE PESTAÑAS (CRÍTICO: Declarar antes de usar) ---
 tab1, tab2 = st.tabs(["📊 Simulador Individual", "⚔️ Comparativa de Bancos"])
 
-# --- TAB 1: INDIVIDUAL ---
+# --- CONTENIDO TAB 1: INDIVIDUAL ---
 with tab1:
     col_a1, col_a2 = st.columns(2)
     with col_a1: tea_ind = st.number_input("TEA Banco (%)", value=9.50, key="tea_ind")
@@ -110,12 +110,12 @@ with tab1:
     with col_g2:
         st.subheader("📉 Saldo del Préstamo")
         fig_line = px.line(df_ind, x="N°", y="Saldo Final")
-        fig_line.update_traces(line_color='#3b82f6', line_width=3, hovertemplate="Cuota: %{x}<br>Saldo: S/ %{y:,.0f}")
+        fig_line.update_traces(line_color='#3b82f6', line_width=3, hovertemplate="Mes: %{x}<br>Saldo: S/ %{y:,.0f}")
         fig_line.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
         fig_line.update_yaxes(tickprefix="S/ ", tickformat=",.0f")
         st.plotly_chart(fig_line, use_container_width=True)
 
-# --- TAB 2: COMPARATIVA ---
+# --- CONTENIDO TAB 2: COMPARATIVA ---
 with tab2:
     st.subheader("⚔️ Auditoría entre Entidades Financieras")
     c_b1, c_b2 = st.columns(2)
@@ -132,7 +132,7 @@ with tab2:
         d2 = st.number_input("Desgravamen B (%)", value=0.080, format="%.3f", key="d2")
         res2 = calcular_motor(monto_p, valor_i, t2, d2, 0.025, plazo_p, c_dobles_p, fecha_p)
 
-    # Lógica de Recomendación
+    # Lógica de Recomendación y Sobrecostos
     total_a = res1['df']["Cuota Total"].sum()
     total_b = res2['df']["Cuota Total"].sum()
     mejor_banco = nombre_a if res1['tcea'] < res2['tcea'] else nombre_b
@@ -148,9 +148,17 @@ with tab2:
         </div>
     """, unsafe_allow_html=True)
 
+    # Métricas de Resumen
+    cm1, cm2, cm3 = st.columns(3)
+    cm1.markdown(f'<div class="tcea-card">TCEA {nombre_a}<br><b style="font-size:1.8rem;">{res1["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
+    cm2.markdown(f'<div class="tcea-card">TCEA {nombre_b}<br><b style="font-size:1.8rem;">{res2["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
+    with cm3:
+        ahorro_val = total_a - total_b
+        color_ah = "#10b981" if ahorro_val > 0 else "#ef4444"
+        st.markdown(f'<div class="ahorro-card" style="background:{color_ah}">{"AHORRO" if ahorro_val > 0 else "SOBRECOSTO"}<br><b style="font-size:1.8rem;">S/ {abs(ahorro_val):,.0f}</b></div>', unsafe_allow_html=True)
+
     # --- RESUMEN NUMÉRICO EXTENDIDO ---
     st.subheader("📋 Resumen Numérico Detallado")
-    
     int_a, seg_a = int(res1['df']["Interés"].sum()), int(res1['df']["Seguros"].sum())
     int_b, seg_b = int(res2['df']["Interés"].sum()), int(res2['df']["Seguros"].sum())
     
@@ -165,22 +173,13 @@ with tab2:
         ],
         nombre_a: [
             int(res1['df'][res1['df']["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]),
-            int_a,
-            seg_a,
-            int_a + seg_a,
-            int(total_a),
-            int(max(0, total_a - total_b))
+            int_a, seg_a, int_a + seg_a, int(total_a), int(max(0, total_a - total_b))
         ],
         nombre_b: [
             int(res2['df'][res2['df']["Tipo"]=="ORDINARIA"]["Cuota Total"].iloc[0]),
-            int_b,
-            seg_b,
-            int_b + seg_b,
-            int(total_b),
-            int(max(0, total_b - total_a))
+            int_b, seg_b, int_b + seg_b, int(total_b), int(max(0, total_b - total_a))
         ]
     }
-    
     df_res = pd.DataFrame(datos_tab)
     st.table(df_res.set_index("Concepto").applymap(lambda x: f"S/ {x:,.0f}"))
 
@@ -192,7 +191,7 @@ with tab2:
     fig_comp.update_layout(barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
     st.plotly_chart(fig_comp, use_container_width=True)
 
-    # --- NOTAS TÉCNICAS ---
+    # --- NOTAS TÉCNICAS Y ENDOSOS ---
     st.write("---")
     st.subheader("📝 Notas de Auditoría de Costos")
     n1, n2 = st.columns(2)
@@ -212,8 +211,9 @@ with tab2:
         <div class="nota-box">
         <h4>⚠️ Puntos Clave</h4>
         <ul>
-            <li><b>Gastos Financieros:</b> Es el "alquiler" real que pagas por el dinero. Incluye intereses y seguros (Desgravamen/Todo Riesgo).</li>
-            <li><b>Efecto Seguros:</b> Nota que el banco con menor TEA no siempre es el ganador si sus seguros son agresivos.</li>
+            <li><b>Gastos Financieros:</b> Es el "alquiler" real que pagas por el dinero. Incluye intereses y seguros.</li>
+            <li><b>Efecto Seguros:</b> Un banco con TEA baja pero seguros agresivos puede ser más caro que uno con TEA alta.</li>
+            <li><b>Endoso de Seguros:</b> Tienes el derecho de <b>endosar una póliza de vida externa</b> para eliminar el cobro mensual del Seguro de Desgravamen bancario, reduciendo significativamente tu pago total.</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
