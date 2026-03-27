@@ -23,17 +23,20 @@ st.markdown("""
         background: linear-gradient(135deg, #064e3b, #065f46);
         padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #10b981;
     }
+    .sobrecosto-card {
+        background: linear-gradient(135deg, #7f1d1d, #b91c1c);
+        padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #ef4444;
+    }
     .nota-box {
         background-color: #161b22; padding: 15px; border-left: 5px solid #d1a435; border-radius: 5px; margin: 10px 0;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. MOTOR DE CÁLCULO ACTUALIZADO ---
+# --- 2. MOTOR DE CÁLCULO ---
 def calcular_motor(monto, valor_inm, tea, t_des, t_riesgo, plazo, c_dobles, fecha_d):
     tem = (1 + tea/100)**(1/12) - 1
     n_meses = plazo * 12
-    # El Seguro Todo Riesgo suele ser una tasa anual dividida entre 12 aplicada al valor de edificación/inmueble
     seg_todo_riesgo_mensual = valor_inm * (t_riesgo/100) / 12
     t_des_m = t_des/100
     
@@ -61,16 +64,11 @@ def calcular_motor(monto, valor_inm, tea, t_des, t_riesgo, plazo, c_dobles, fech
         data.append({
             "N°": i, "Mes": (fecha_d + pd.DateOffset(months=i)).strftime('%b-%Y'),
             "Tipo": "DOBLE" if es_d else "ORDINARIA",
-            "Saldo Inicial": int(saldo + amort), 
-            "Cuota Cap+Int": int(c_cap_int),
-            "Interés": int(int_m), 
-            "Seg. Desgravamen": int(seg_desg), 
-            "Seg. Todo Riesgo": int(seg_todo_riesgo_mensual), 
-            "Cuota Total": int(c_total),
-            "Saldo Final": int(max(0, saldo)), 
-            "Interés Acumulado": int(int_ac), 
-            "Capital Acumulado": int(cap_ac), 
-            "Total Seguros": int(seg_desg + seg_todo_riesgo_mensual)
+            "Saldo Inicial": int(saldo + amort), "Cuota Cap+Int": int(c_cap_int),
+            "Interés": int(int_m), "Seg. Desgravamen": int(seg_desg), 
+            "Seg. Todo Riesgo": int(seg_todo_riesgo_mensual), "Cuota Total": int(c_total),
+            "Saldo Final": int(max(0, saldo)), "Interés Acumulado": int(int_ac), 
+            "Capital Acumulado": int(cap_ac), "Total Seguros": int(seg_desg + seg_todo_riesgo_mensual)
         })
         flujos.append(c_total)
     
@@ -108,42 +106,67 @@ with tab1:
     st.subheader("📋 Calendario de Pagos Detallado")
     st.dataframe(df_ind[["N°", "Mes", "Tipo", "Saldo Inicial", "Cuota Cap+Int", "Interés", "Seg. Desgravamen", "Seg. Todo Riesgo", "Cuota Total", "Saldo Final"]], use_container_width=True)
 
+    st.write("---")
+    st.subheader("📝 Notas a Considerar")
+    st.markdown("""
+    <div class="nota-box">
+        <ul>
+            <li><b>Seguro de Desgravamen:</b> Se calcula sobre el saldo del principal (deuda pendiente). A medida que pagas tu deuda, este seguro disminuye mensualmente.</li>
+            <li><b>Seguro de Todo Riesgo:</b> Se calcula sobre el monto asegurado (valor del inmueble o de edificación). Es un costo fijo durante toda la vida del préstamo.</li>
+            <li><b>Amortización:</b> En las primeras cuotas, la mayor parte de tu pago se destina a intereses. La reducción real de tu deuda se acelera hacia la mitad del plazo.</li>
+            <li><b>Cuotas Dobles:</b> Si activaste Julio y Diciembre, tu capacidad de ahorro en esos meses debe contemplar el doble de la cuota ordinaria.</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
 # --- TAB 2: COMPARATIVA ---
 with tab2:
     st.subheader("⚔️ Auditoría entre Entidades Financieras")
     c_b1, c_b2 = st.columns(2)
     with c_b1:
         st.info("🏦 OPCIÓN A")
-        n_a = st.text_input("Banco A", value="BANCO A")
+        n_a = st.text_input("Nombre Banco A", value="BANCO A")
         t1 = st.number_input("TEA A (%)", value=9.5, key="t1")
         d1 = st.number_input("Desgravamen A (%)", value=0.050, format="%.3f", key="d1")
         r1 = st.number_input("Todo Riesgo A (%)", value=0.30, key="r1")
         res1 = calcular_motor(monto_p, valor_i, t1, d1, r1, plazo_p, c_dobles_p, fecha_p)
     with c_b2:
         st.success("🏦 OPCIÓN B")
-        n_b = st.text_input("Banco B", value="BANCO B")
+        n_b = st.text_input("Nombre Banco B", value="BANCO B")
         t2 = st.number_input("TEA B (%)", value=9.2, key="t2")
         d2 = st.number_input("Desgravamen B (%)", value=0.080, format="%.3f", key="d2")
         r2 = st.number_input("Todo Riesgo B (%)", value=0.28, key="r2")
         res2 = calcular_motor(monto_p, valor_i, t2, d2, r2, plazo_p, c_dobles_p, fecha_p)
 
-    # Lógica de Recomendación
     total_a = res1['df']["Cuota Total"].sum()
     total_b = res2['df']["Cuota Total"].sum()
+    ahorro_val = total_a - total_b
+    
+    st.write("---")
+    
+    # --- 3 TARJETAS PRINCIPALES ---
+    tc1, tc2, tc3 = st.columns(3)
+    with tc1:
+        st.markdown(f'<div class="tcea-card"><small>TCEA {n_a}</small><br><b style="font-size:1.8rem;">{res1["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
+    with tc2:
+        st.markdown(f'<div class="tcea-card"><small>TCEA {n_b}</small><br><b style="font-size:1.8rem;">{res2["tcea"]:.2f}%</b></div>', unsafe_allow_html=True)
+    with tc3:
+        # Si el ahorro es negativo, significa que el Banco A es más barato, por eso usamos abs() para el monto
+        clase_card = "ahorro-card" if ahorro_val != 0 else "tcea-card"
+        texto_card = "AHORRO TOTAL" if ahorro_val > 0 else "SOBRECOSTO"
+        st.markdown(f'<div class="{clase_card if ahorro_val > 0 else "sobrecosto-card"}"><small>{texto_card}</small><br><b style="font-size:1.8rem;">S/ {abs(ahorro_val):,.0f}</b></div>', unsafe_allow_html=True)
+
+    # --- RECOMENDACIÓN FINAL ---
     mejor = n_a if res1['tcea'] < res2['tcea'] else n_b
     color_rec = "#1e3a8a" if mejor == n_a else "#10b981"
     
-    st.write("---")
     st.markdown(f"""
-        <div style="background-color: {color_rec}; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; border: 2px solid #ffffff33;">
+        <div style="background-color: {color_rec}; padding: 20px; border-radius: 15px; text-align: center; margin: 25px 0; border: 2px solid #ffffff33;">
             <h2 style="color: white; margin: 0;">✅ RECOMENDACIÓN: {mejor}</h2>
-            <p style="color: #e0e0e0; font-size: 1.1rem; margin-top: 10px;">
-                El <b>{mejor}</b> es la opción ganadora tras auditar Intereses, Desgravamen y Seguro de Inmueble.
-            </p>
         </div>
     """, unsafe_allow_html=True)
 
-    # --- RESUMEN NUMÉRICO EXTENDIDO ---
+    # --- RESUMEN NUMÉRICO Y GRÁFICO ---
     st.subheader("📋 Resumen Numérico de Auditoría")
     
     def get_row(res_b):
@@ -163,18 +186,9 @@ with tab2:
         n_a: get_row(res1),
         n_b: get_row(res2)
     }
-    
     df_res = pd.DataFrame(datos_tab)
-    # Cálculo de sobrecosto
-    sobrecosto_a = int(max(0, total_a - total_b))
-    sobrecosto_b = int(max(0, total_b - total_a))
-    
-    new_row = {"Concepto": "SOBRECOSTO BANCARIO", n_a: sobrecosto_a, n_b: sobrecosto_b}
-    df_res = pd.concat([df_res, pd.DataFrame([new_row])], ignore_index=True)
-
     st.table(df_res.set_index("Concepto").applymap(lambda x: f"S/ {x:,.0f}"))
 
-    # --- GRÁFICO COMPARATIVO ---
     st.write("")
     fig_comp = go.Figure()
     fig_comp.add_trace(go.Bar(name=n_a, x=df_res["Concepto"][:4], y=df_res[n_a][:4], marker_color='#1e3a8a'))
@@ -182,18 +196,15 @@ with tab2:
     fig_comp.update_layout(barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
     st.plotly_chart(fig_comp, use_container_width=True)
 
-    # --- NOTAS TÉCNICAS ---
+    # --- NOTAS DE AUDITORÍA ---
     st.write("---")
-    st.subheader("📝 Notas de Auditoría")
+    st.subheader("📝 Notas de Auditoría de Costos")
     n1, n2 = st.columns(2)
     with n1:
         st.markdown(f"""
         <div class="nota-box">
         <h4>💰 Cálculo del Sobrecosto</h4>
         <p>Se obtiene comparando el <b>Pago Total</b> proyectado. El sobrecosto es dinero que el cliente "pierde" al no elegir la opción con TCEA más baja.</p>
-        <ul>
-            <li><b>Seguro Todo Riesgo:</b> Es un costo fijo basado en el valor del inmueble. No reduce con el saldo.</li>
-        </ul>
         </div>
         """, unsafe_allow_html=True)
     with n2:
@@ -201,8 +212,8 @@ with tab2:
         <div class="nota-box">
         <h4>⚠️ Puntos Clave</h4>
         <ul>
-            <li><b>Gastos Financieros:</b> Suma de Intereses + Seguros (Desgravamen + Todo Riesgo).</li>
-            <li><b>Endoso:</b> Puedes endosar tu seguro de vida (elimina Desgravamen) y tu seguro domiciliario (elimina Todo Riesgo) para bajar la cuota.</li>
+            <li><b>Gastos Financieros:</b> Suma de Intereses + Seguros.</li>
+            <li><b>Endoso:</b> Puedes endosar seguros externos para bajar la cuota.</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
