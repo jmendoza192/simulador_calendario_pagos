@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import numpy_financial as npf
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
 
 # 1. CONFIGURACIÓN E INTERFAZ
@@ -64,13 +65,15 @@ def generar_cronograma():
             mes_actual = (fecha_desembolso + pd.DateOffset(months=i)).month
             if mes_actual in [7, 12]: meses_dobles.append(i)
     
-    # Factor para cuota constante con cuotas dobles
+    # Factor para cuota constante considerando cuotas dobles y desgravamen
     divisor = sum((2 if i in meses_dobles else 1) / (1 + tem + tasa_desgravamen)**i for i in range(1, n_meses + 1))
     cuota_base = monto_prestamo / divisor
     
     saldo = monto_prestamo
     data = []
     flujos = [-monto_prestamo]
+    interes_acumulado = 0
+    capital_acumulado = 0
     
     for i in range(1, n_meses + 1):
         f_actual = fecha_desembolso + pd.DateOffset(months=i)
@@ -83,6 +86,8 @@ def generar_cronograma():
         cuota_total = c_cap_int + seg_des + seg_inmueble_fijo
         
         saldo -= amortizacion
+        interes_acumulado += interes_mes
+        capital_acumulado += amortizacion
         
         data.append({
             "N°": i,
@@ -94,7 +99,9 @@ def generar_cronograma():
             "Seg. Desgravamen": round(seg_des, 2),
             "Seg. Todo Riesgo": round(seg_inmueble_fijo, 2),
             "Cuota Total": round(cuota_total, 2),
-            "Saldo Final": round(max(0, saldo), 2)
+            "Saldo Final": round(max(0, saldo), 2),
+            "Interés Acumulado": round(interes_acumulado, 2),
+            "Capital Acumulado": round(capital_acumulado, 2)
         })
         flujos.append(cuota_total)
 
@@ -115,30 +122,53 @@ with c4: st.markdown(f'<div class="tcea-card"><small>TCEA (Costo Real)</small><b
 
 st.write("")
 
-# TABLA RESALTADA
+# --- 5. GRÁFICAS DE COMPARACIÓN ---
+col_g1, col_g2 = st.columns(2)
+
+with col_g1:
+    st.subheader("📊 Interés vs Capital (Acumulado)")
+    fig_area = go.Figure()
+    fig_area.add_trace(go.Scatter(x=df_cronograma["N°"], y=df_cronograma["Interés Acumulado"], name="Interés Pagado", stackgroup='one', fillcolor='rgba(239, 68, 68, 0.5)', line=dict(color='#ef4444')))
+    fig_area.add_trace(go.Scatter(x=df_cronograma["N°"], y=df_cronograma["Capital Acumulado"], name="Capital Pagado", stackgroup='one', fillcolor='rgba(16, 185, 129, 0.5)', line=dict(color='#10b981')))
+    fig_area.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white", hovermode='x unified')
+    st.plotly_chart(fig_area, use_container_width=True)
+
+with col_g2:
+    st.subheader("📉 Saldo del Préstamo")
+    fig_line = px.line(df_cronograma, x="N°", y="Saldo Final", labels={'Saldo Final': 'Saldo (S/)'})
+    fig_line.update_traces(line_color='#3b82f6', line_width=3)
+    fig_line.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font_color="white")
+    st.plotly_chart(fig_line, use_container_width=True)
+
+# --- 6. TABLA RESALTADA ---
 st.subheader("🗓️ Detalle del Calendario de Pagos")
 
 def resaltar_dobles(s):
-    return ['background-color: #0e2647; font-weight: bold' if s.Tipo == 'DOBLE' else '' for _ in s]
+    return ['background-color: #0e2647; font-weight: bold; color: #ffffff' if s.Tipo == 'DOBLE' else '' for _ in s]
 
 df_vis = df_cronograma.copy()
+# Seleccionamos solo las columnas necesarias para el cliente
+cols_cliente = ["N°", "Mes", "Tipo", "Saldo Inicial", "Cuota Cap+Int", "Interés", "Seg. Desgravamen", "Seg. Todo Riesgo", "Cuota Total", "Saldo Final"]
+df_vis = df_vis[cols_cliente]
+
+# Formateo de moneda
 cols_format = ["Saldo Inicial", "Cuota Cap+Int", "Interés", "Seg. Desgravamen", "Seg. Todo Riesgo", "Cuota Total", "Saldo Final"]
 for c in cols_format: df_vis[c] = df_vis[c].map("S/ {:,.2f}".format)
 
 st.dataframe(df_vis.style.apply(resaltar_dobles, axis=1), height=450, use_container_width=True)
 
-# --- 5. NOTAS TÉCNICAS (SOLICITADAS) ---
+# --- 7. NOTAS TÉCNICAS ---
 st.write("---")
 col_n1, col_n2 = st.columns(2)
 
 with col_n1:
     st.markdown("""
     <div class="nota-box">
-    <h4>📌 Notas Importantes</h4>
+    <h4>📌 Notas Técnicas</h4>
     <ul>
-        <li><b>Seguro de Desgravamen:</b> Se calcula sobre el <b>saldo del principal</b> pendiente. A medida que amortizas capital, este seguro disminuye.</li>
-        <li><b>Seguro de Todo Riesgo:</b> Se calcula sobre el <b>monto asegurado</b> (valor del inmueble excluyendo el terreno). Es un monto fijo mensual.</li>
-        <li><b>TCEA:</b> La Tasa Costo Efectiva Anual incluye la TEA, seguros y comisiones. Es el indicador real de cuánto te cuesta el préstamo.</li>
+        <li><b>Seguro de Desgravamen:</b> Calculado sobre el <b>saldo del principal</b>. Protege tu deuda en caso de fallecimiento o invalidez.</li>
+        <li><b>Seguro de Todo Riesgo:</b> Calculado sobre el <b>monto asegurado</b> (valor de la edificación). Es obligatorio para créditos hipotecarios.</li>
+        <li><b>TCEA:</b> Incluye todos los costos directos e indirectos (TEA + Seguros).</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
@@ -146,14 +176,14 @@ with col_n1:
 with col_n2:
     st.markdown("""
     <div class="nota-box">
-    <h4>💡 Recomendación del Asesor</h4>
+    <h4>💡 Estrategia de Ahorro</h4>
     <ul>
-        <li><b>Cuotas Extras:</b> Al pagar cuotas dobles en Julio y Diciembre, reduces el capital más rápido, lo que genera un ahorro masivo de intereses a largo plazo.</li>
-        <li><b>Pre-pagos:</b> Siempre que tengas un excedente, solicita <b>"Amortización de Capital con reducción de plazo"</b> para maximizar tu ahorro.</li>
+        <li><b>Fila Azul:</b> Representa tus cuotas extraordinarias (Julio y Diciembre). Nota cómo el saldo baja drásticamente en estos meses.</li>
+        <li><b>Optimización:</b> Al pagar el doble en estos meses, tu <b>Interés Acumulado</b> crece más lento, ahorrándote miles de soles al final del plazo.</li>
     </ul>
     </div>
     """, unsafe_allow_html=True)
 
 # EXPORTACIÓN
-csv = df_cronograma.to_csv(index=False).encode('utf-8')
-st.download_button("📥 Descargar Cronograma para el Cliente", data=csv, file_name=f"Cronograma_Jancarlo_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+csv = df_cronograma[cols_cliente].to_csv(index=False).encode('utf-8')
+st.download_button("📥 Descargar Reporte para el Cliente", data=csv, file_name=f"Cronograma_Inmobiliario_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
